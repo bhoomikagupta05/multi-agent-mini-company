@@ -1,32 +1,51 @@
 import { CEOAgent } from "../agents/ceoAgent";
 import { ResearchAgent } from "../agents/researchAgent";
 import { ProductAgent } from "../agents/productAgent";
-import { Phase3Output } from "../types";
+import { FinanceAgent } from "../agents/financeAgent";
+import { InvestorAgent } from "../agents/investorAgent";
+import { Phase6Output } from "../types";
 
 /**
  * CompanyOrchestrator Class
  * 
  * ORCHESTRATION PATTERN DESIGN:
- * This class implements the Central Orchestrator design pattern. Instead of agents triggering
- * each other directly (choreography) or the API route handling the flow, the Orchestrator acts
- * as a single coordinator. It manages the lifecycle, execution order, and context-passing 
- * between agents.
+ * Centralised orchestrator controlling agent lifecycles and cascading outputs.
  * 
- * why this pattern is chosen:
- * 1. Single Responsibility: The API route is kept "thin", focusing only on HTTP request parsing
- *    and HTTP response status codes. The orchestrator owns the business process.
- * 2. Loose Coupling: Individual agents (CEOAgent, ResearchAgent, ProductAgent) remain isolated.
- *    They do not know about each other's existence; they only consume inputs and return outputs.
- * 3. Environment Independence: Because the orchestration is decoupled from Next.js HTTP routes,
- *    we can run the same pipeline in CLI tools, Cron/Background tasks, or WebSocket handlers.
+ * PHASE 6 DATA PIPELINE FLOW:
  * 
- * FUTURE MULTI-AGENT EXPANSION:
- * To add future agents (e.g., Product Manager, Finance, Investor):
- * 1. Import the new agent class.
- * 2. Add a new stage in the `run` method.
- * 3. Pass the previous results down as parameters.
- * 4. Update the return type interface (e.g., Phase4Output) to include the new output key.
- * No modifications are needed in the UI routing or API controller structures, keeping updates isolated.
+ *   [User Startup Idea]
+ *           │
+ *           ▼
+ *     ┌───────────┐
+ *     │ CEO Agent │  <-- 1. [CEO Started] / [CEO Completed]
+ *     └─────┬─────┘
+ *           │
+ *           ├─ (ceoOutput)
+ *           ▼
+ *     ┌──────────────┐
+ *     │Research Agent│ <-- 2. [Research Started] / [Research Completed]
+ *     └─────┬────────┘
+ *           │
+ *           ├─ (ceoOutput + researchOutput)
+ *           ▼
+ *     ┌──────────────┐
+ *     │Product Agent │ <-- 3. [Product Started] / [Product Completed]
+ *     └─────┬────────┘
+ *           │
+ *           ├─ (ceoOutput + researchOutput + productOutput)
+ *           ▼
+ *     ┌──────────────┐
+ *     │Finance Agent │ <-- 4. [Finance Started] / [Finance Completed]
+ *     └─────┬────────┘
+ *           │
+ *           ├─ (ceoOutput + researchOutput + productOutput + financeOutput)
+ *           ▼
+ *     ┌──────────────┐
+ *     │Investor Agent│ <-- 5. [Investor Started] / [Investor Completed]
+ *     └─────┬────────┘
+ *           │
+ *           ▼
+ *     [Unified JSON Response]  { success: true, data: { ceo, research, product, finance, investor } }
  */
 export class CompanyOrchestrator {
   /**
@@ -35,7 +54,7 @@ export class CompanyOrchestrator {
    * @param startupIdea - The raw business description from the user.
    * @returns A consolidated object containing outputs from all agents.
    */
-  async run(startupIdea: string): Promise<Phase3Output> {
+  async run(startupIdea: string): Promise<Phase6Output> {
     const pipelineStart = performance.now();
 
     console.log(`\n=================== START PIPELINE ===================`);
@@ -44,37 +63,54 @@ export class CompanyOrchestrator {
     // --- STAGE 1: CEO AGENT ---
     console.log("[CEO Started]");
     const ceoStart = performance.now();
-    
     const ceoAgent = new CEOAgent();
     const ceoOutput = await ceoAgent.generateCompanyPlan(startupIdea);
-    
     const ceoEnd = performance.now();
     const ceoDuration = ((ceoEnd - ceoStart) / 1000).toFixed(2);
     console.log(`[CEO Completed] (${ceoDuration}s)`);
 
     // --- STAGE 2: RESEARCH AGENT ---
-    // CEO Output flows directly as context into the Research Agent
     console.log("\n[Research Started]");
     const researchStart = performance.now();
-    
     const researchAgent = new ResearchAgent();
     const researchOutput = await researchAgent.generateResearch(startupIdea, ceoOutput);
-    
     const researchEnd = performance.now();
     const researchDuration = ((researchEnd - researchStart) / 1000).toFixed(2);
     console.log(`[Research Completed] (${researchDuration}s)`);
 
     // --- STAGE 3: PRODUCT AGENT ---
-    // Both CEO Output and Research Output flow directly as context into the Product Agent
     console.log("\n[Product Started]");
     const productStart = performance.now();
-    
     const productAgent = new ProductAgent();
     const productOutput = await productAgent.generateProductPlan(startupIdea, ceoOutput, researchOutput);
-    
     const productEnd = performance.now();
     const productDuration = ((productEnd - productStart) / 1000).toFixed(2);
     console.log(`[Product Completed] (${productDuration}s)`);
+
+    // --- STAGE 4: FINANCE AGENT ---
+    console.log("\n[Finance Started]");
+    const financeStart = performance.now();
+    const financeAgent = new FinanceAgent();
+    const financeOutput = await financeAgent.generateFinancePlan(startupIdea, ceoOutput, researchOutput, productOutput);
+    const financeEnd = performance.now();
+    const financeDuration = ((financeEnd - financeStart) / 1000).toFixed(2);
+    console.log(`[Finance Completed] (${financeDuration}s)`);
+
+    // --- STAGE 5: INVESTOR AGENT ---
+    // Ingests CEO, Research, Product, and Finance outputs as context.
+    console.log("\n[Investor Started]");
+    const investorStart = performance.now();
+    const investorAgent = new InvestorAgent();
+    const investorOutput = await investorAgent.generateInvestmentEvaluation(
+      startupIdea,
+      ceoOutput,
+      researchOutput,
+      productOutput,
+      financeOutput
+    );
+    const investorEnd = performance.now();
+    const investorDuration = ((investorEnd - investorStart) / 1000).toFixed(2);
+    console.log(`[Investor Completed] (${investorDuration}s)`);
 
     // --- PIPELINE COMPLETE SUMMARY ---
     const pipelineEnd = performance.now();
@@ -88,7 +124,9 @@ export class CompanyOrchestrator {
     return {
       ceo: ceoOutput,
       research: researchOutput,
-      product: productOutput
+      product: productOutput,
+      finance: financeOutput,
+      investor: investorOutput
     };
   }
 }
