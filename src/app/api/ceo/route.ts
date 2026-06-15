@@ -1,46 +1,25 @@
 import { NextResponse } from "next/server";
-import { CEOAgent } from "../../../agents/ceoAgent";
-import { ResearchAgent } from "../../../agents/researchAgent";
-import { ProductAgent } from "../../../agents/productAgent";
+import { companyOrchestrator } from "../../../orchestrator/companyOrchestrator";
 
 /**
  * Handles POST requests to /api/ceo
  * 
- * PHASE 3 PIPELINE:
- * Chaining sequence:
+ * THIN API CONTROLLER DESIGN:
+ * Following clean architecture principles, this endpoint acts strictly as an entry point:
+ * 1. Parses and validates the HTTP Request body.
+ * 2. Checks that required environments are present (GEMINI_API_KEY).
+ * 3. Hands execution off to the business layer (CompanyOrchestrator).
+ * 4. Returns the result with the correct HTTP Status and Content-Type.
  * 
- *     [User Input: Startup Idea]
- *                 │
- *                 ▼
- *          ┌─────────────┐
- *          │  CEO Agent  │  <-- 1. [CEO Started] Sets company profile/goals [CEO Completed]
- *          └──────┬──────┘
- *                 │
- *                 ├─ (ceoOutput)
- *                 ▼
- *          ┌──────────────┐
- *          │Research Agent│ <-- 2. [Research Started] Runs market context analysis [Research Completed]
- *          └──────┬───────┘
- *                 │
- *                 ├─ (ceoOutput + researchOutput)
- *                 ▼
- *          ┌──────────────┐
- *          │Product Agent │ <-- 3. [Product Started] Defines MVP scope/personas [Product Completed]
- *          └──────┬───────┘
- *                 │
- *                 ▼
- *     [Unified JSON Response]  { success: true, data: { ceo, research, product } }
- * 
- * SCALABILITY DESIGN:
- * This decoupled structure remains modular. Adding Finance or Investor agents later
- * would follow the exact same pattern: import the agent, instantiate it, and pass
- * previous outputs as arguments.
+ * By delegating orchestration, this file remains under 50 lines of code,
+ * making it easy to read, test, and adapt to any future routing changes.
  */
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const startupIdea = body.startupIdea || body.idea;
 
+    // 1. Basic validation
     if (!startupIdea || typeof startupIdea !== "string" || startupIdea.trim() === "") {
       return NextResponse.json(
         { 
@@ -51,59 +30,35 @@ export async function POST(request: Request) {
       );
     }
 
+    // 2. Pre-requisite validation
     if (!process.env.GEMINI_API_KEY) {
       return NextResponse.json(
         {
           success: false,
           error: "Gemini API key is not configured. Please define GEMINI_API_KEY in your .env.local file."
         },
-        { status: 500 }
+        { status: 550 }
       );
     }
 
-    console.log(`[Orchestrator] Starting sequential execution pipeline for idea: "${startupIdea}"`);
+    // 3. Delegate execution to the Orchestrator
+    const result = await companyOrchestrator.run(startupIdea);
 
-    // --- STAGE 1: CEO AGENT ---
-    console.log("[Orchestrator] CEO Started");
-    const ceoAgent = new CEOAgent();
-    const ceoOutput = await ceoAgent.generateCompanyPlan(startupIdea);
-    console.log("[Orchestrator] CEO Completed");
-
-    // --- STAGE 2: RESEARCH AGENT ---
-    // CEO output is passed as context to Research Agent.
-    console.log("[Orchestrator] Research Started");
-    const researchAgent = new ResearchAgent();
-    const researchOutput = await researchAgent.generateResearch(startupIdea, ceoOutput);
-    console.log("[Orchestrator] Research Completed");
-
-    // --- STAGE 3: PRODUCT AGENT ---
-    // Both CEO output and Research output are passed as context to Product Agent.
-    console.log("[Orchestrator] Product Started");
-    const productAgent = new ProductAgent();
-    const productOutput = await productAgent.generateProductPlan(startupIdea, ceoOutput, researchOutput);
-    console.log("[Orchestrator] Product Completed");
-
-    console.log("[Orchestrator] Execution Pipeline finished successfully.");
-
-    // --- RETURN COMBINED OUTPUT ---
+    // 4. Return successful response
     return NextResponse.json({
       success: true,
-      data: {
-        ceo: ceoOutput,
-        research: researchOutput,
-        product: productOutput
-      }
+      data: result
     });
 
   } catch (error: any) {
-    console.error("[Orchestrator] Pipeline error:", error);
+    console.error("[API Controller Error]:", error);
 
     return NextResponse.json(
       {
         success: false,
         error: error.message || "An error occurred during agent execution."
       },
-      { status: 500 }
+      { status: 550 }
     );
   }
 }
