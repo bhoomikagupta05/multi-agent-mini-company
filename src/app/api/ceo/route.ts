@@ -1,42 +1,43 @@
 import { NextResponse } from "next/server";
 import { CEOAgent } from "../../../agents/ceoAgent";
 import { ResearchAgent } from "../../../agents/researchAgent";
+import { ProductAgent } from "../../../agents/productAgent";
 
 /**
  * Handles POST requests to /api/ceo
  * 
- * ORCHESTRATION & AGENT COMMUNICATION DESIGN:
- * This API endpoint acts as the central coordinator (orchestrator) for our virtual company.
- * In Phase 2, we implement a sequential agent-chaining pipeline:
+ * PHASE 3 PIPELINE:
+ * Chaining sequence:
  * 
  *     [User Input: Startup Idea]
  *                 │
  *                 ▼
  *          ┌─────────────┐
- *          │  CEO Agent  │  <-- 1. Sets name, vision, mission, goals, departments
+ *          │  CEO Agent  │  <-- 1. [CEO Started] Sets company profile/goals [CEO Completed]
  *          └──────┬──────┘
  *                 │
- *                 ├─ (CEOOutput passed as context)
+ *                 ├─ (ceoOutput)
  *                 ▼
  *          ┌──────────────┐
- *          │Research Agent│ <-- 2. Performs market validation aligning with CEO goals
+ *          │Research Agent│ <-- 2. [Research Started] Runs market context analysis [Research Completed]
+ *          └──────┬───────┘
+ *                 │
+ *                 ├─ (ceoOutput + researchOutput)
+ *                 ▼
+ *          ┌──────────────┐
+ *          │Product Agent │ <-- 3. [Product Started] Defines MVP scope/personas [Product Completed]
  *          └──────┬───────┘
  *                 │
  *                 ▼
- *     [Unified JSON Response]  { success: true, data: { ceo, research } }
+ *     [Unified JSON Response]  { success: true, data: { ceo, research, product } }
  * 
  * SCALABILITY DESIGN:
- * By keeping the orchestration inside this API route, the individual agents remain isolated,
- * testable, and completely independent. If we want to add future agents:
- * 
- * Step 3: PM Agent -> const pmResult = await pmAgent.generatePRD(idea, ceoResult, researchResult);
- * Step 4: Finance Agent -> const financeResult = await financeAgent.generateFinancials(ceoResult, pmResult);
- * 
- * We would simply call them here sequentially and append their results to the final payload.
+ * This decoupled structure remains modular. Adding Finance or Investor agents later
+ * would follow the exact same pattern: import the agent, instantiate it, and pass
+ * previous outputs as arguments.
  */
 export async function POST(request: Request) {
   try {
-    // 1. Parse request body
     const body = await request.json().catch(() => ({}));
     const startupIdea = body.startupIdea || body.idea;
 
@@ -60,38 +61,47 @@ export async function POST(request: Request) {
       );
     }
 
-    console.log(`[Orchestrator] Starting execution for idea: "${startupIdea}"`);
+    console.log(`[Orchestrator] Starting sequential execution pipeline for idea: "${startupIdea}"`);
 
-    // --- STEP 1: Execute the CEO Agent ---
-    console.log("[Orchestrator] Running CEO Agent...");
+    // --- STAGE 1: CEO AGENT ---
+    console.log("[Orchestrator] CEO Started");
     const ceoAgent = new CEOAgent();
     const ceoOutput = await ceoAgent.generateCompanyPlan(startupIdea);
+    console.log("[Orchestrator] CEO Completed");
 
-    // --- STEP 2: Execute the Research Agent ---
-    // Here we pass 'ceoOutput' as the second argument. This is the core data pipeline
-    // where the Research Agent reads the CEO's decisions to perform contextual market research.
-    console.log("[Orchestrator] Running Research Agent...");
+    // --- STAGE 2: RESEARCH AGENT ---
+    // CEO output is passed as context to Research Agent.
+    console.log("[Orchestrator] Research Started");
     const researchAgent = new ResearchAgent();
     const researchOutput = await researchAgent.generateResearch(startupIdea, ceoOutput);
+    console.log("[Orchestrator] Research Completed");
 
-    console.log("[Orchestrator] Both agents completed execution successfully.");
+    // --- STAGE 3: PRODUCT AGENT ---
+    // Both CEO output and Research output are passed as context to Product Agent.
+    console.log("[Orchestrator] Product Started");
+    const productAgent = new ProductAgent();
+    const productOutput = await productAgent.generateProductPlan(startupIdea, ceoOutput, researchOutput);
+    console.log("[Orchestrator] Product Completed");
 
-    // --- STEP 3: Return Unified Output ---
+    console.log("[Orchestrator] Execution Pipeline finished successfully.");
+
+    // --- RETURN COMBINED OUTPUT ---
     return NextResponse.json({
       success: true,
       data: {
         ceo: ceoOutput,
-        research: researchOutput
+        research: researchOutput,
+        product: productOutput
       }
     });
 
   } catch (error: any) {
-    console.error("[Orchestrator] Execution failed:", error);
+    console.error("[Orchestrator] Pipeline error:", error);
 
     return NextResponse.json(
       {
         success: false,
-        error: error.message || "An unexpected error occurred during agent execution."
+        error: error.message || "An error occurred during agent execution."
       },
       { status: 500 }
     );
