@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CEOOutput, ResearchOutput, ProductOutput, FinanceOutput, InvestorOutput } from "../types";
+import { CEOOutput, ResearchOutput, ProductOutput, FinanceOutput, InvestorOutput, SummaryOutput } from "../types";
 
 export default function Home() {
   // 1. STATE MANAGEMENT
@@ -9,17 +9,23 @@ export default function Home() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   
-  // Unified results structure containing all five agent outputs
+  // Unified results structure containing all six agent outputs
   const [results, setResults] = useState<{
     ceo: CEOOutput;
     research: ResearchOutput;
     product: ProductOutput;
     finance: FinanceOutput;
     investor: InvestorOutput;
+    summary: SummaryOutput;
   } | null>(null);
   
-  // Selected tab: "ceo" | "research" | "product" | "finance" | "investor" | "pipeline"
-  const [activeTab, setActiveTab] = useState<"ceo" | "research" | "product" | "finance" | "investor" | "pipeline">("ceo");
+  // Selected tab: "summary" | "ceo" | "research" | "product" | "finance" | "investor" | "pipeline"
+  // Default active tab is 'ceo' initially, but we switch to 'summary' once results are loaded.
+  const [activeTab, setActiveTab] = useState<"summary" | "ceo" | "research" | "product" | "finance" | "investor" | "pipeline">("ceo");
+
+  // Report Export States
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
 
   const exampleIdeas = [
     "I want to build a food delivery startup focusing on healthy salads.",
@@ -37,7 +43,6 @@ export default function Home() {
     setResults(null);
 
     try {
-      // Calls the API endpoint executing CEO -> Research -> Product -> Finance -> Investor sequentially
       const response = await fetch("/api/ceo", {
         method: "POST",
         headers: {
@@ -49,16 +54,61 @@ export default function Home() {
       const result = await response.json();
 
       if (!response.ok || !result.success) {
-        throw new Error(result.error || "Failed to execute agent orchestration pipeline.");
+        throw new Error(result.error || "Failed to execute LangGraph pipeline.");
       }
 
       setResults(result.data);
-      setActiveTab("ceo"); // Reset tab to CEO Strategy
+      // REQUIREMENT: Make Executive Summary the default tab after pipeline completion
+      setActiveTab("summary");
     } catch (err: any) {
       console.error(err);
       setError(err.message || "An unexpected error occurred.");
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 3. REPORT DOWNLOAD HANDLER
+  const handleDownloadReport = async (reportType: string = "business_report") => {
+    if (!results) return;
+    setIsGeneratingReport(true);
+    setReportError(null);
+
+    try {
+      const response = await fetch("/api/report", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          results,
+          type: reportType,
+        }),
+      });
+
+      if (!response.ok) {
+        const errJson = await response.json().catch(() => ({}));
+        throw new Error(errJson.error || "Failed to generate report PDF.");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      
+      const companyName = results.ceo.companyName || "startup";
+      const safeCompanyName = companyName.replace(/[^a-z0-9]/gi, "_").toLowerCase();
+      link.setAttribute("download", `${safeCompanyName}_${reportType}.pdf`);
+      
+      document.body.appendChild(link);
+      link.click();
+      link.parentNode?.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err: any) {
+      console.error(err);
+      setReportError(err.message || "An error occurred during report generation.");
+    } finally {
+      setIsGeneratingReport(false);
     }
   };
 
@@ -73,11 +123,11 @@ export default function Home() {
               Mini AI Company
             </h1>
             <span className="bg-blue-900/80 text-blue-300 text-xs px-2.5 py-1 rounded font-bold border border-blue-800">
-              Phase 6: CEO + Research + PM + CFO + VC Agents
+              Phase 8: LangGraph Sequential Agent Network
             </span>
           </div>
           <p className="mt-2 text-sm text-slate-400">
-            Submit a startup idea. The Orchestrator chains CEO, Research, PM, CFO, and Investor agents sequentially to review and score the viability of your business.
+            Submit a startup idea. A stateful LangGraph coordinates the workflow across six agents sequentially, outputting a complete launch synthesis.
           </p>
         </header>
 
@@ -92,7 +142,7 @@ export default function Home() {
                 id="startup-idea"
                 rows={4}
                 className="w-full rounded bg-slate-950 border border-slate-700 text-slate-200 p-3 focus:outline-none focus:ring-1 focus:ring-blue-500 text-sm placeholder-slate-500"
-                placeholder="Example: A specialized online tutoring marketplace connecting verified medical students with premeds..."
+                placeholder="Example: An app for scheduling mobile pet grooming vans locally with user ratings..."
                 value={startupIdea}
                 onChange={(e) => setStartupIdea(e.target.value)}
                 disabled={isLoading}
@@ -124,14 +174,14 @@ export default function Home() {
                 disabled={isLoading || !startupIdea.trim()}
                 className="w-full sm:w-auto bg-blue-600 hover:bg-blue-500 text-white font-semibold py-2 px-5 rounded text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
-                {isLoading ? "Running 5 AI Agents..." : "Start Agent Pipeline"}
+                {isLoading ? "Running 6 LangGraph Nodes..." : "Start Graph Pipeline"}
               </button>
             </div>
           </form>
 
           {error && (
             <div className="mt-4 p-3 bg-red-950/80 border border-red-800 rounded text-red-200 text-sm">
-              <strong className="font-bold">Pipeline Error:</strong> {error}
+              <strong className="font-bold">Graph Execution Error:</strong> {error}
             </div>
           )}
         </section>
@@ -141,18 +191,75 @@ export default function Home() {
           <div className="space-y-6">
             
             {/* Banner */}
-            <div className="bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 shadow-sm">
+            <div className="bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col md:flex-row md:items-center md:justify-between gap-4 shadow-sm">
               <div>
                 <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Virtual Company Profile</span>
                 <h2 className="text-2xl font-black text-white">{results.ceo.companyName}</h2>
               </div>
-              <div className="text-xs text-slate-400 bg-slate-900 py-1 px-3 rounded border border-slate-700 max-w-max">
-                Due Diligence Status: <span className="text-blue-400 font-semibold">Critiqued</span>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="text-xs text-slate-400 bg-slate-900 py-1.5 px-3 rounded border border-slate-700 max-w-max">
+                  Graph Status: <span className="text-blue-400 font-semibold">Compiled & Executed</span>
+                </div>
+                
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => handleDownloadReport("business_report")}
+                    disabled={isGeneratingReport}
+                    className="bg-blue-600 hover:bg-blue-500 disabled:bg-blue-800 text-white text-xs font-bold py-1.5 px-3 rounded transition-colors flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    {isGeneratingReport ? (
+                      <>
+                        <span className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full" />
+                        Generating Report...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                        Download Business Report
+                      </>
+                    )}
+                  </button>
+
+                  <select
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleDownloadReport(e.target.value);
+                        e.target.value = ""; // Reset
+                      }
+                    }}
+                    disabled={isGeneratingReport}
+                    className="bg-slate-900 border border-slate-700 text-slate-300 text-xs rounded px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-500 cursor-pointer disabled:cursor-not-allowed"
+                    defaultValue=""
+                  >
+                    <option value="" disabled>Other PDF Exports</option>
+                    <option value="investor_report">Investor Critique PDF</option>
+                    <option value="executive_summary">Executive Summary PDF</option>
+                    <option value="pitch_deck">Pitch Deck PDF</option>
+                  </select>
+                </div>
               </div>
             </div>
 
+            {reportError && (
+              <div className="p-3 bg-red-955/80 border border-red-800 rounded text-red-200 text-sm">
+                <strong className="font-bold">Report Export Error:</strong> {reportError}
+              </div>
+            )}
+
             {/* Simple Tab Switcher */}
             <div className="flex border-b border-slate-700 overflow-x-auto scrollbar-none">
+              <button
+                className={`py-2.5 px-4 font-semibold text-sm border-b-2 whitespace-nowrap transition-all ${
+                  activeTab === "summary"
+                    ? "border-blue-500 text-blue-400"
+                    : "border-transparent text-slate-400 hover:text-slate-200"
+                }`}
+                onClick={() => setActiveTab("summary")}
+              >
+                Executive Summary
+              </button>
               <button
                 className={`py-2.5 px-4 font-semibold text-sm border-b-2 whitespace-nowrap transition-all ${
                   activeTab === "ceo"
@@ -217,6 +324,127 @@ export default function Home() {
 
             {/* TAB CONTENTS */}
 
+            {/* TAB 0: EXECUTIVE SUMMARY (Default) */}
+            {activeTab === "summary" && (
+              <section className="space-y-6">
+                
+                {/* Visual Scores & Verdict */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  {/* Verdict */}
+                  <div className="bg-gradient-to-r from-blue-900 to-indigo-900 p-5 rounded-lg border border-blue-800 shadow-md flex flex-col justify-center md:col-span-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-300">Incubator Verdict</span>
+                    <h3 className="text-xl font-black text-white mt-1 leading-tight">{results.summary.finalVerdict}</h3>
+                  </div>
+
+                  {/* Startup Score */}
+                  <div className="bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col justify-center">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Startup Score</span>
+                    <div className="flex items-baseline gap-1 mt-1">
+                      <span className="text-2xl font-black text-white">{results.summary.startupScore}</span>
+                      <span className="text-xs text-slate-500">/ 10</span>
+                    </div>
+                  </div>
+
+                  {/* Confidence / Readiness Double Score */}
+                  <div className="bg-slate-800 p-4 rounded-lg border border-slate-700 flex flex-col justify-center space-y-2">
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Readiness:</span>
+                      <span className="text-sm font-bold text-white">{results.summary.startupReadinessScore}%</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400 block">Confidence:</span>
+                      <span className="text-sm font-bold text-white">{results.summary.confidenceScore}%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Narrative Brief */}
+                <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
+                  <h3 className="text-sm font-bold uppercase text-slate-200 mb-2.5">Executive Summary</h3>
+                  <p className="text-sm text-slate-300 leading-relaxed font-light">{results.summary.executiveSummary}</p>
+                </div>
+
+                {/* Opportunities & Risks */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
+                    <h3 className="text-sm font-bold uppercase text-slate-200 mb-2">Synthesized Opportunities</h3>
+                    <ul className="list-disc list-inside space-y-1 text-xs text-slate-350 text-slate-300">
+                      {results.summary.topOpportunities.map((opp, idx) => (
+                        <li key={idx}>{opp}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
+                    <h3 className="text-sm font-bold uppercase text-slate-200 mb-2">Primary Threat Risks</h3>
+                    <ul className="list-disc list-inside space-y-1 text-xs text-slate-350 text-slate-300">
+                      {results.summary.topRisks.map((risk, idx) => (
+                        <li key={idx}>{risk}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                {/* SWOT Highlights: Strengths & Weaknesses */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Strengths */}
+                  <div className="bg-slate-800/60 p-5 rounded-lg border border-emerald-950">
+                    <h3 className="text-sm font-bold uppercase text-emerald-400 mb-3">Top 3 Strengths</h3>
+                    <ul className="space-y-1.5 text-xs text-slate-300">
+                      {results.summary.topStrengths.map((str, idx) => (
+                        <li key={idx} className="flex gap-2">
+                          <span className="text-emerald-400 font-bold font-mono">✓</span>
+                          <span>{str}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Weaknesses */}
+                  <div className="bg-slate-800/60 p-5 rounded-lg border border-rose-950">
+                    <h3 className="text-sm font-bold uppercase text-rose-400 mb-3">Top 3 Weaknesses</h3>
+                    <ul className="space-y-1.5 text-xs text-slate-300">
+                      {results.summary.topWeaknesses.map((weak, idx) => (
+                        <li key={idx} className="flex gap-2">
+                          <span className="text-rose-450 text-rose-400 font-bold font-mono">✗</span>
+                          <span>{weak}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                {/* Action Items: 30-Day vs 90-Day */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Next 30 Days */}
+                  <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
+                    <h3 className="text-sm font-bold uppercase text-blue-400 mb-3">Immediate Actions (Next 30 Days)</h3>
+                    <ul className="space-y-2 text-xs text-slate-300">
+                      {results.summary.immediateActions.map((action, idx) => (
+                        <li key={idx} className="flex gap-2 items-start">
+                          <span className="bg-blue-950 text-blue-300 text-[10px] font-bold px-1.5 py-0.5 rounded font-mono">DAY {idx * 10 + 10}</span>
+                          <span className="leading-relaxed">{action}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Next 90 Days */}
+                  <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
+                    <h3 className="text-sm font-bold uppercase text-indigo-400 mb-3">Medium-Term Actions (Next 90 Days)</h3>
+                    <ul className="space-y-2 text-xs text-slate-300">
+                      {results.summary.mediumTermActions.map((action, idx) => (
+                        <li key={idx} className="flex gap-2 items-start">
+                          <span className="bg-indigo-950 text-indigo-300 text-[10px] font-bold px-1.5 py-0.5 rounded font-mono">DAY {idx * 15 + 45}</span>
+                          <span className="leading-relaxed">{action}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+              </section>
+            )}
+
             {/* TAB 1: CEO STRATEGY */}
             {activeTab === "ceo" && (
               <section className="space-y-6">
@@ -247,7 +475,7 @@ export default function Home() {
                           <tr key={idx} className="border-b border-slate-800 last:border-b-0">
                             <td className="py-3 pr-4 font-medium text-white">{g.goal}</td>
                             <td className="py-3 px-4">{g.timeframe}</td>
-                            <td className="py-3 pl-4 text-emerald-450 font-mono text-xs text-emerald-450 text-emerald-400">{g.metric}</td>
+                            <td className="py-3 pl-4 text-emerald-450 font-mono text-xs text-emerald-400">{g.metric}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -377,9 +605,7 @@ export default function Home() {
                           <div className="flex justify-between items-center">
                             <h4 className="font-semibold text-xs text-white">Gap {idx + 1}</h4>
                             <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
-                              opp.potentialImpact === "High" 
-                                ? "bg-emerald-950 text-emerald-300 border border-emerald-900" 
-                                : "bg-blue-950 text-blue-300 border border-blue-900"
+                              opp.potentialImpact === "High" ? "bg-emerald-950 text-emerald-300 border border-emerald-900" : "bg-blue-950 text-blue-300 border border-blue-900"
                             }`}>
                               Impact: {opp.potentialImpact}
                             </span>
@@ -411,9 +637,7 @@ export default function Home() {
                         <div className="flex justify-between items-center">
                           <h4 className="font-semibold text-xs text-white">{r.risk}</h4>
                           <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
-                            r.severity === "High" 
-                              ? "bg-red-950 text-red-300 border border-red-900" 
-                              : "bg-amber-950 text-amber-305 text-amber-400 border border-amber-900"
+                            r.severity === "High" ? "bg-red-955 text-red-300 border border-red-900" : "bg-amber-955 text-amber-300 border border-amber-900"
                           }`}>
                             Severity: {r.severity}
                           </span>
@@ -434,9 +658,7 @@ export default function Home() {
               <section className="space-y-6">
                 <div className="bg-gradient-to-r from-blue-900/80 to-purple-900/80 p-5 rounded-lg border border-blue-800/60 shadow-md">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-blue-300">Unique Selling Proposition (USP)</span>
-                  <h3 className="text-base font-extrabold text-white mt-1 leading-relaxed">
-                    {results.product.usp}
-                  </h3>
+                  <h3 className="text-base font-extrabold text-white mt-1 leading-relaxed">{results.product.usp}</h3>
                 </div>
 
                 <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
@@ -480,7 +702,7 @@ export default function Home() {
                           <h4 className="font-bold text-sm text-white">{feat.name}</h4>
                           <span className="text-[9px] bg-slate-950 text-slate-400 py-0.5 px-2 rounded uppercase tracking-wider font-bold">Feature {idx + 1}</span>
                         </div>
-                        <p className="text-xs text-slate-305 text-slate-300 leading-relaxed">{feat.description}</p>
+                        <p className="text-xs text-slate-300 leading-relaxed">{feat.description}</p>
                         <div className="border-t border-slate-800 mt-2.5 pt-2 text-xs">
                           <span className="text-[9px] text-emerald-400 font-bold uppercase tracking-wider block">Expected Value:</span>
                           <span className="text-slate-300">{feat.value}</span>
@@ -496,17 +718,10 @@ export default function Home() {
                     {results.product.featurePriorities.map((prio, idx) => {
                       const isMust = prio.tier.toLowerCase().includes("must");
                       const isShould = prio.tier.toLowerCase().includes("should");
-                      const colorClass = isMust 
-                        ? "text-red-400 bg-red-950/40 border-red-900" 
-                        : isShould 
-                          ? "text-indigo-400 bg-indigo-950/40 border-indigo-900"
-                          : "text-slate-400 bg-slate-900 border-slate-800";
-                          
+                      const colorClass = isMust ? "text-red-400 bg-red-955/40 border-red-900" : isShould ? "text-indigo-400 bg-indigo-955/40 border-indigo-900" : "text-slate-400 bg-slate-900 border-slate-800";
                       return (
                         <div key={idx} className="bg-slate-900/60 rounded border border-slate-800 flex flex-col">
-                          <div className={`p-2.5 border-b font-bold text-xs text-center rounded-t uppercase ${colorClass}`}>
-                            {prio.tier}
-                          </div>
+                          <div className={`p-2.5 border-b font-bold text-xs text-center rounded-t uppercase ${colorClass}`}>{prio.tier}</div>
                           <ul className="p-3 space-y-1.5 flex-1 list-disc list-inside text-xs text-slate-300">
                             {prio.features.map((f, fIdx) => (
                               <li key={fIdx}>{f}</li>
@@ -616,7 +831,7 @@ export default function Home() {
                           {results.finance.startupCostEstimate.map((cost, idx) => (
                             <tr key={idx} className="border-b border-slate-800 last:border-b-0">
                               <td className="py-2.5 pr-2 font-medium text-white">{cost.item}</td>
-                              <td className="py-2.5 px-2 text-slate-405">{cost.description}</td>
+                              <td className="py-2.5 px-2 text-slate-400">{cost.description}</td>
                               <td className="py-2.5 pl-2 text-right font-mono text-emerald-400">{cost.amount}</td>
                             </tr>
                           ))}
@@ -640,8 +855,8 @@ export default function Home() {
                           {results.finance.monthlyOperatingExpenses.map((exp, idx) => (
                             <tr key={idx} className="border-b border-slate-800 last:border-b-0">
                               <td className="py-2.5 pr-2 font-medium text-white">{exp.item}</td>
-                              <td className="py-2.5 px-2 text-slate-405">{exp.frequency}</td>
-                              <td className="py-2.5 pl-2 text-right font-mono text-rose-400">{exp.amount}</td>
+                              <td className="py-2.5 px-2 text-slate-400">{exp.frequency}</td>
+                              <td className="py-2.5 pl-2 text-right font-mono text-rose-450 text-rose-400">{exp.amount}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -650,7 +865,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
+                <div className="bg-slate-805 p-5 rounded-lg border border-slate-700 bg-slate-800">
                   <h3 className="text-sm font-bold uppercase text-slate-200 mb-3">Revenue & Monetization Models</h3>
                   <div className="mb-4 text-xs text-slate-300 bg-slate-900/60 p-3 rounded border border-slate-850 leading-relaxed">
                     <span className="font-bold text-blue-300 block mb-1">Pricing Model Summary:</span>
@@ -661,11 +876,11 @@ export default function Home() {
                       <div key={idx} className="bg-slate-900/40 p-4 rounded border border-slate-850">
                         <div className="flex justify-between items-center mb-1.5">
                           <h4 className="font-bold text-sm text-white">{stream.name}</h4>
-                          <span className="text-[10px] text-emerald-450 text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-900/60 font-mono">{stream.projectedRevenue} (Y1)</span>
+                          <span className="text-[10px] text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-900/60 font-mono">{stream.projectedRevenue} (Y1)</span>
                         </div>
                         <p className="text-xs text-slate-400 mb-2 leading-relaxed">{stream.description}</p>
                         <div className="border-t border-slate-800 pt-2 text-[11px]">
-                          <span className="text-slate-500 font-semibold uppercase tracking-wider block text-[9px]">Charging Model:</span>
+                          <span className="text-slate-505 font-semibold uppercase tracking-wider block text-[9px]">Charging Model:</span>
                           <span className="text-slate-300">{stream.pricingModel}</span>
                         </div>
                       </div>
@@ -681,12 +896,12 @@ export default function Home() {
                         <div className="flex justify-between items-center">
                           <h4 className="font-semibold text-xs text-white">{r.risk}</h4>
                           <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
-                            r.severity === "High" ? "bg-red-950 text-red-300 border border-red-900" : "bg-amber-950 text-amber-300 border border-amber-900"
+                            r.severity === "High" ? "bg-red-955 text-red-300 border border-red-900" : "bg-amber-955 text-amber-300 border border-amber-900"
                           }`}>
                             Severity: {r.severity}
                           </span>
                         </div>
-                        <div className="mt-2 pt-2 border-t border-slate-855 border-slate-800 text-xs">
+                        <div className="mt-2 pt-2 border-t border-slate-850 text-xs">
                           <span className="font-semibold text-blue-300 block text-[10px] uppercase">Mitigation strategy:</span>
                           <p className="text-slate-300 mt-1">{r.mitigation}</p>
                         </div>
@@ -700,10 +915,7 @@ export default function Home() {
             {/* TAB 5: INVESTOR CRITIQUE */}
             {activeTab === "investor" && (
               <section className="space-y-6">
-                
-                {/* Score Indicators & Verdict */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Verdict Banner */}
                   <div className="bg-gradient-to-r from-purple-900 to-indigo-900 p-5 rounded-lg border border-purple-800 shadow-md flex flex-col justify-center md:col-span-1">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300">Investment Decision</span>
                     <h3 className="text-xl font-black text-white mt-1">{results.investor.recommendation}</h3>
@@ -712,61 +924,48 @@ export default function Home() {
                     </span>
                   </div>
 
-                  {/* Investment Score Card */}
                   <div className="bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col justify-center md:col-span-1">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Investment Score</span>
                     <div className="flex items-baseline gap-2 mt-1">
                       <span className="text-3xl font-black text-white">{results.investor.investmentScore}</span>
-                      <span className="text-sm text-slate-550 text-slate-500">/ 10</span>
+                      <span className="text-sm text-slate-500">/ 10</span>
                     </div>
-                    {/* Visual Progress Bar */}
                     <div className="w-full bg-slate-900 h-1.5 rounded-full mt-2.5 overflow-hidden">
-                      <div 
-                        className="bg-emerald-500 h-1.5 rounded-full" 
-                        style={{ width: `${results.investor.investmentScore * 10}%` }}
-                      />
+                      <div className="bg-emerald-500 h-1.5 rounded-full" style={{ width: `${results.investor.investmentScore * 10}%` }} />
                     </div>
                   </div>
 
-                  {/* Risk Score Card */}
                   <div className="bg-slate-800 p-5 rounded-lg border border-slate-700 flex flex-col justify-center md:col-span-1">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Risk Score</span>
                     <div className="flex items-baseline gap-2 mt-1">
                       <span className="text-3xl font-black text-white">{results.investor.riskScore}</span>
-                      <span className="text-sm text-slate-550 text-slate-500">/ 10</span>
+                      <span className="text-sm text-slate-500">/ 10</span>
                     </div>
-                    {/* Visual Progress Bar */}
                     <div className="w-full bg-slate-900 h-1.5 rounded-full mt-2.5 overflow-hidden">
-                      <div 
-                        className="bg-rose-500 h-1.5 rounded-full" 
-                        style={{ width: `${results.investor.riskScore * 10}%` }}
-                      />
+                      <div className="bg-rose-500 h-1.5 rounded-full" style={{ width: `${results.investor.riskScore * 10}%` }} />
                     </div>
                   </div>
                 </div>
 
-                {/* Top reasons to Invest / Pass */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Reasons to Invest */}
-                  <div className="bg-slate-800/80 p-5 rounded-lg border border-emerald-900/40">
-                    <h3 className="text-sm font-bold uppercase text-emerald-400 mb-3">Top 3 Reasons to Invest</h3>
-                    <ul className="space-y-2 text-xs text-slate-300">
+                  <div className="bg-slate-800/80 p-5 rounded-lg border border-emerald-950">
+                    <h3 className="text-sm font-bold uppercase text-emerald-450 text-emerald-400 mb-3">Top 3 Reasons to Invest</h3>
+                    <ul className="space-y-2 text-xs text-slate-350 text-slate-300">
                       {results.investor.reasonsToInvest.map((reason, idx) => (
                         <li key={idx} className="flex gap-2.5">
-                          <span className="text-emerald-450 text-emerald-400 font-bold font-mono">{idx + 1}.</span>
+                          <span className="text-emerald-400 font-bold font-mono">{idx + 1}.</span>
                           <span className="leading-relaxed">{reason}</span>
                         </li>
                       ))}
                     </ul>
                   </div>
 
-                  {/* Reasons to Pass */}
-                  <div className="bg-slate-800/80 p-5 rounded-lg border border-rose-900/40">
-                    <h3 className="text-sm font-bold uppercase text-rose-450 text-rose-455 text-rose-400 mb-3">Top 3 Reasons to pass / hold</h3>
-                    <ul className="space-y-2 text-xs text-slate-300">
+                  <div className="bg-slate-800/80 p-5 rounded-lg border border-rose-950">
+                    <h3 className="text-sm font-bold uppercase text-rose-455 text-rose-400 mb-3">Top 3 Reasons to Pass</h3>
+                    <ul className="space-y-2 text-xs text-slate-350 text-slate-300">
                       {results.investor.reasonsNotToInvest.map((reason, idx) => (
                         <li key={idx} className="flex gap-2.5">
-                          <span className="text-rose-450 text-rose-400 font-bold font-mono">{idx + 1}.</span>
+                          <span className="text-rose-400 font-bold font-mono">{idx + 1}.</span>
                           <span className="leading-relaxed">{reason}</span>
                         </li>
                       ))}
@@ -774,7 +973,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* SWOT: Strengths & Weaknesses */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
                     <h3 className="text-sm font-bold uppercase text-slate-200 mb-2">Strengths (Due Diligence)</h3>
@@ -785,7 +983,7 @@ export default function Home() {
                     </ul>
                   </div>
                   <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
-                    <h3 className="text-sm font-bold uppercase text-slate-200 mb-2">Weaknesses / Vulnerabilities</h3>
+                    <h3 className="text-sm font-bold uppercase text-slate-200 mb-2">Weaknesses / Gaps</h3>
                     <ul className="list-disc list-inside space-y-1.5 text-xs text-slate-300">
                       {results.investor.weaknesses.map((weak, idx) => (
                         <li key={idx}>{weak}</li>
@@ -794,83 +992,85 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Exit Potential & VC Funding Recommendation */}
                 <div className="bg-slate-800 p-5 rounded-lg border border-slate-700 space-y-4">
-                  <h3 className="text-sm font-bold uppercase text-slate-200">Exit Potential & Investment Recommendation</h3>
-                  
+                  <h3 className="text-sm font-bold uppercase text-slate-200">Exit Potential & VC Terms</h3>
                   <div>
-                    <span className="text-[10px] text-blue-300 font-bold uppercase tracking-wider block">VC Funding Structure & Recommendation:</span>
+                    <span className="text-[10px] text-blue-300 font-bold uppercase tracking-wider block">VC Funding Recommendation:</span>
                     <p className="text-xs text-slate-300 mt-1 leading-relaxed">{results.investor.fundingRecommendation}</p>
                   </div>
-
                   <div className="border-t border-slate-750 pt-3">
-                    <span className="text-[10px] text-blue-300 font-bold uppercase tracking-wider block">Exit Strategy & Potential (M&A/IPO):</span>
+                    <span className="text-[10px] text-blue-300 font-bold uppercase tracking-wider block">Exit Strategy (Acquisition/IPO):</span>
                     <p className="text-xs text-slate-300 mt-1 leading-relaxed">{results.investor.exitPotential}</p>
                   </div>
                 </div>
 
-                {/* Questions for Founder */}
                 <div className="bg-slate-800 p-5 rounded-lg border border-slate-700">
                   <h3 className="text-sm font-bold uppercase text-slate-200 mb-3">Due Diligence Questions for Founder</h3>
                   <div className="space-y-2.5">
                     {results.investor.questionsForFounder.map((q, idx) => (
-                      <div key={idx} className="p-3 bg-slate-900/50 rounded border border-slate-750 border-slate-800 flex gap-3 items-start">
-                        <span className="text-xs text-blue-400 font-black font-mono mt-0.5">Q{idx + 1}</span>
+                      <div key={idx} className="p-3 bg-slate-900/50 rounded border border-slate-750 flex gap-3 items-start">
+                        <span className="text-xs text-blue-450 text-blue-450 text-blue-400 font-black font-mono mt-0.5">Q{idx + 1}</span>
                         <p className="text-xs text-slate-300 leading-relaxed font-medium">{q}</p>
                       </div>
                     ))}
                   </div>
                 </div>
-
               </section>
             )}
 
             {/* TAB 6: PIPELINE INSIGHTS */}
             {activeTab === "pipeline" && (
               <section className="bg-slate-800 p-5 rounded-lg border border-slate-700 space-y-4">
-                <h3 className="text-lg font-bold text-white">How CEO, Research, PM, CFO, and VC Agents Communicate</h3>
+                <h3 className="text-lg font-bold text-white">How CEO, Research, PM, CFO, VC, and Summary Agents Communicate</h3>
                 
                 <div className="space-y-4 text-sm text-slate-300 leading-relaxed">
                   <p>
-                    This dashboard demonstrates a multi-agent waterfall context cascade. Each agent is a separate class executing sequentially:
+                    This dashboard operates via a stateful **LangGraph Workflow** containing six nodes executing sequentially:
                   </p>
 
                   <div className="p-4 bg-slate-900 rounded border border-slate-750 font-mono text-xs space-y-2 text-blue-300">
                     <div>1. UI triggers POST to /api/ceo with startupIdea: "{startupIdea}"</div>
                     
-                    <div>2. Orchestrator runs: <span className="text-white">CEOAgent.generateCompanyPlan(startupIdea)</span></div>
-                    <div>   └─ CEO sets Company Name, Vision, Mission, Year 1 Goals, and Departments.</div>
+                    <div>2. Graph runs CEO Node: <span className="text-white">ceoNode</span></div>
+                    <div>   └─ Sets Company Name, Vision, Mission, Year 1 Goals, and Departments.</div>
                     
                     <div className="text-slate-500 my-1 font-sans italic text-[11px]">
-                      // CEO output flows into Research Agent:
+                      // CEO output passes to Research Node:
                     </div>
-                    <div>3. Orchestrator runs: <span className="text-white">ResearchAgent.generateResearch(startupIdea, ceoOutput)</span></div>
-                    <div>   └─ Researcher maps target audience demographics, pain points, competitor weaknesses.</div>
+                    <div>3. Graph runs Research Node: <span className="text-white">researchNode</span></div>
+                    <div>   └─ Analyzes target demographics, pain points, competitor weaknesses.</div>
                     
                     <div className="text-slate-505 text-slate-500 my-1 font-sans italic text-[11px]">
-                      // CEO and Research outputs flow into PM Agent:
+                      // CEO and Research outputs cascade to PM Node:
                     </div>
-                    <div>4. Orchestrator runs: <span className="text-white">ProductAgent.generateProductPlan(startupIdea, ceoOutput, researchOutput)</span></div>
-                    <div>   └─ PM Agent creates user personas, MVP features, priority matrix, and release roadmaps.</div>
+                    <div>4. Graph runs Product Node: <span className="text-white">productNode</span></div>
+                    <div>   └─ Scopes user personas, MVP features, priority matrix, and roadmaps.</div>
                     
                     <div className="text-slate-505 text-slate-500 my-1 font-sans italic text-[11px]">
-                      // CEO, Research, and Product outputs flow into CFO Agent:
+                      // CEO, Research, and Product outputs cascade to Finance Node:
                     </div>
-                    <div>5. Orchestrator runs: <span className="text-white">FinanceAgent.generateFinancePlan(startupIdea, ceoOutput, researchOutput, productOutput)</span></div>
-                    <div>   └─ CFO structures startup setups, monthly OPEX, pricing models, revenue forecast, and risk mitigation.</div>
+                    <div>5. Graph runs Finance Node: <span className="text-white">financeNode</span></div>
+                    <div>   └─ Forecasts startup setup costs, monthly OPEX, pricing, revenue, and risks.</div>
+
+                    <div className="text-slate-505 text-slate-500 my-1 font-sans italic text-[11px]">
+                      // Previous outputs cascade to Investor Node:
+                    </div>
+                    <div>6. Graph runs Investor Node: <span className="text-white">investorNode</span></div>
+                    <div>   └─ Assigns scores (0-10), verdict, strengths, weaknesses, exit potential, and terms.</div>
 
                     <div className="text-slate-550 text-slate-500 my-1 font-sans italic text-[11px]">
-                      // Step 5: CEO, Research, Product, and Finance outputs flow into VC Agent:
+                      // All outputs are synthesized by Summary Node:
                     </div>
-                    <div>6. Orchestrator runs: <span className="text-white">InvestorAgent.generateInvestmentEvaluation(startupIdea, ceoOutput, researchOutput, productOutput, financeOutput)</span></div>
-                    <div>   └─ VC Agent assigns scores (0-10), rates pitch, generates exit strategy and diligence questions.</div>
+                    <div>7. Graph runs Summary Node: <span className="text-white">summaryNode</span> [NEW]</div>
+                    <div>   └─ Synthesizes Executive Summary briefing, Startup Readiness, Incubator Verdict, and SWOT.</div>
                     
-                    <div>7. Pipeline success. Orchestrator returns combined JSON payload.</div>
+                    <div>8. Graph reaches END. Returns consolidated state object containing all outputs.</div>
                   </div>
 
-                  <h4 className="font-bold text-white pt-2 text-sm uppercase">Advantages of this Architecture:</h4>
+                  <h4 className="font-bold text-white pt-2 text-sm uppercase">Advantages of LangGraph Stateful Architecture:</h4>
                   <ul className="list-disc list-inside space-y-1.5 text-xs text-slate-450">
-                    <li><strong className="text-slate-300">Decoupled & Modular:</strong> Because the outputs are returned in a clean nested structure, external reporting or PDF generation utilities can consume the results of this pipeline downstream without making expensive LLM calls.</li>
+                    <li><strong className="text-slate-300">Centralized Shared State:</strong> Schema annotation `CompanyStateAnnotation` eliminates parameters passing mess.</li>
+                    <li><strong className="text-slate-300">Robust Extensibility:</strong> Graph structure remains backward compatible, paving the way for parallel agent branches, checkpointers (memory saving), or human loops.</li>
                   </ul>
                 </div>
               </section>

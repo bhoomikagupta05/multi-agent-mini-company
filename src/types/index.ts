@@ -188,15 +188,59 @@ export interface InvestorOutput {
 }
 
 /**
- * Combined response payload containing CEO, Research, Product, Finance, and Investor outputs.
- * 
- * FUTURE SCALABILITY:
- * Further reporting, audit, or PDF generation agents can consume this clean nested object.
+ * ============================================================================
+ * PHASE 7: LANGGRAPH PIPELINE METADATA TYPES
+ * ============================================================================
  */
-export interface Phase6Output {
+
+export interface NodeMetadata {
+  startTime: number;                       // Epoch timestamp when node execution started
+  endTime: number;                         // Epoch timestamp when node execution finished
+  duration: string;                        // Human readable duration string (e.g., "2.42s")
+  status: "idle" | "running" | "completed" | "failed"; // Processing state
+}
+
+export interface GraphExecutionMetadata {
+  trace: string[];                         // Visual execution path
+  nodes: Record<string, NodeMetadata>;    // Node-by-node execution details
+}
+
+/**
+ * ============================================================================
+ * PHASE 8: EXECUTIVE SUMMARY AGENT TYPES
+ * ============================================================================
+ */
+
+export interface SummaryOutput {
+  executiveSummary: string;                // High-level narrative briefing
+  startupScore: number;                    // Consolidated rating from 0.0 to 10.0
+  confidenceScore: number;                 // Consolidated confidence rating from 0 to 100
+  startupReadinessScore: number;            // Readiness score (technical, market, operational) from 0 to 100
+  topOpportunities: string[];              // Synthesized top opportunities
+  topRisks: string[];                      // Synthesized top threat factors
+  topStrengths: string[];                  // Exactly 3 synthesized strengths
+  topWeaknesses: string[];                 // Exactly 3 synthesized weaknesses
+  immediateActions: string[];              // Actionable next steps for the next 30 days
+  mediumTermActions: string[];             // Actionable next steps for the next 90 days
+  finalVerdict: string;                    // Final executive verdict
+}
+
+/**
+ * Combined response payload containing CEO, Research, Product, Finance, Investor,
+ * and Summary outputs, plus LangGraph metadata.
+ */
+export interface Phase8Output {
   ceo: CEOOutput;
   research: ResearchOutput;
   product: ProductOutput;
   finance: FinanceOutput;
   investor: InvestorOutput;
+  summary: SummaryOutput;
+  metadata: GraphExecutionMetadata;
 }
+export type CombinedOutput = Phase8Output;
+export type Phase7Output = Phase8Output;
+export type Phase6Output = Phase8Output;
+export type Phase5Output = Phase8Output;
+export type Phase3Output = Phase8Output;
+export type CEOOutputData = CEOOutput;
